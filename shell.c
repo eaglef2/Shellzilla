@@ -3,67 +3,106 @@
 #include <string.h>
 #include <stdlib.h>
 #include <stdbool.h>
-#include <assert.h>
+#include <ctype.h>
 
-char *Line = NULL;
-size_t  LineSize = 0;
+#include "check.h"
+#include "token.h"
 
-char **SplitString(char *String, int StrLen, char *Delims, int *Num);
+#define INIT_SIZE 10
+
+void ProcessTokens(Token *Tokens, int NumTokens);
 
 int main(int argc, char *argv[])
 {
+    size_t numTokens = 0;
+    size_t sizeTokens = INIT_SIZE;
+    int    state   = 0;
+    char   curChar = '\0';
+    bool   changed = false;
+    bool   lineIsEmpty = true;
+    Token *tokens  = NEW(Token, sizeTokens);
+    
     printf("> ");
-    while (getline(&Line, &LineSize, stdin) != -1) {
-        int NumTokens = 0;
-        char **Tokens = SplitString(Line, LineSize, " ", &NumTokens);
-
-        for (int i = 0; i < NumTokens; i++)
-            printf("%s\n", Tokens[i]);
-
-
-        free(Tokens);
-        free(Line);
-        Line = NULL;
-        LineSize = 0;
-        printf("> ");
+    Log("Starting program\n");
+    
+    while (true) {
+        if (numTokens >= sizeTokens) {
+            GrowArray(tokens, sizeTokens);
+        }
+        curChar = getchar();
+        Log("State %d: Got char '%c' (%d)\n", state, curChar, curChar);
+        if (state == 0) {
+            if (curChar == '\n') {
+                if (changed)
+                    numTokens += 1;
+                ProcessTokens(tokens, numTokens);
+                FreeTokens(&tokens, &sizeTokens);
+                numTokens = 0;
+                sizeTokens = INIT_SIZE;
+                tokens = NEW(Token, sizeTokens);
+                printf("> ");
+                changed = false;
+                changed = false;
+                lineIsEmpty = true;
+                continue;
+            } else if (isspace(curChar)) {
+                if (changed) {
+                    numTokens+= 1;
+                    changed = false;
+                }
+                lineIsEmpty = false;
+                continue;
+            } else if (curChar == EOF) {
+                if (lineIsEmpty)
+                    break;
+                else
+                    continue;
+            }
+            
+            lineIsEmpty = false;
+            changed = true;
+            if (curChar == '\'')
+                state = 1;
+            else if (curChar == '"')
+                state = 2;
+            else 
+                AppendChar(&tokens[numTokens], curChar);
+        } else if (state == 1) {
+            if (curChar == '\'') {
+                state = 0;
+            } else
+                AppendChar(&tokens[numTokens], curChar);
+        } else if (state == 2) {
+            if (curChar == '"')
+                state = 0;
+            else if (curChar == '\\') {
+                curChar = getchar();
+                AppendChar(&tokens[numTokens], curChar);
+            } else
+                AppendChar(&tokens[numTokens], curChar);
+        }
     }
-    free(Line);
-    Line = NULL;
+    
+    FreeTokens(&tokens, &sizeTokens);
+    CloseLog();
+    
     return 0;
 }
 
-char **SplitString(char *String, int StrLen, char *Delims, int *Num)
+void ProcessTokens(Token *Tokens, int NumTokens)
 {
-    int len = 10;
-    char **ret = NULL;
-    char *curString = NULL;
-
-    if (Num == NULL || String == NULL)
-        return NULL;
-    
-    *Num = 0;
-    ret = (char **) calloc(len, sizeof(char **));
-
-    curString = strtok(String, Delims);
-    if (curString == NULL) {
-        ret[(*Num)++] = String;
-        return ret;
-    } else {
-        ret[(*Num)++] = curString;
+    Log("ProcessTokens: %d\n", NumTokens);
+    if (NumTokens == 0)
+        return;
+    printf("[");
+    for (int i = 0; i < NumTokens; i++) {
+        printf("\"");
+        for (int j = 0; j < Tokens[i].strLen; j++)
+            printf("%c", Tokens[i].str[j]);
+        if (i < NumTokens - 1)
+            printf("\",");
+        else 
+            printf("\"");
     }
-
-    while ((curString = strtok(NULL, Delims)) != NULL) {
-        if (*Num == len) {
-            int oldLen = len;
-            len *= 2;
-            ret = (char **) realloc(ret, len);
-            assert(ret != NULL);
-            for (int i = oldLen; i < len; i++)
-                ret[i] = NULL;
-        }
-
-        ret[(*Num)++] = curString;
-    }
-
-    return ret;
+    printf("]\n");
 }
